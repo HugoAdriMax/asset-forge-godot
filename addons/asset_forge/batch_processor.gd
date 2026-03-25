@@ -53,7 +53,7 @@ func process(config: Dictionary) -> void:
 	for i in gltf_files.size():
 		var file_path: String = gltf_files[i]
 		var file_name: String = file_path.get_file().get_basename()
-		var clean_name: String = _sanitize(file_name, i)
+		var clean_name: String = AssetForgeUtils.sanitize(file_name, "item", i)
 
 		_log("[%d/%d] [b]%s[/b]" % [i + 1, gltf_files.size(), file_path.get_file()])
 
@@ -121,7 +121,7 @@ func _extract_materials(node: Node, out_dir: String, prefix: String) -> void:
 		var mi: MeshInstance3D = node as MeshInstance3D
 		if mi.mesh != null:
 			_process_mesh_mats(mi, out_dir, prefix)
-		for s in mi.get_surface_override_material_count():
+		for s: int in mi.get_surface_override_material_count():
 			var mat: Material = mi.get_surface_override_material(s)
 			if mat != null and not _is_external(mat):
 				_save_override(mi, s, mat, out_dir, prefix)
@@ -131,7 +131,7 @@ func _extract_materials(node: Node, out_dir: String, prefix: String) -> void:
 
 func _process_mesh_mats(mi: MeshInstance3D, out_dir: String, prefix: String) -> void:
 	var mesh: Mesh = mi.mesh
-	for s in mesh.get_surface_count():
+	for s: int in mesh.get_surface_count():
 		var mat: Material = mesh.surface_get_material(s)
 		if mat == null or _is_external(mat):
 			continue
@@ -141,12 +141,14 @@ func _process_mesh_mats(mi: MeshInstance3D, out_dir: String, prefix: String) -> 
 			var cached: Material = load(_material_cache[mat_id]) as Material
 			if cached:
 				mesh.surface_set_material(s, cached)
+			else:
+				_log("  [color=orange]⚠ Cached material could not be loaded: %s[/color]" % _material_cache[mat_id])
 			continue
 
 		var mat_name: String = mat.resource_name
 		if mat_name.is_empty():
 			mat_name = "mat_%s_s%d" % [mi.name, s]
-		var save_path: String = _unique_path(out_dir.path_join(_sanitize(prefix + "_" + mat_name, s) + ".tres"))
+		var save_path: String = AssetForgeUtils.unique_path(out_dir.path_join(AssetForgeUtils.sanitize(prefix + "_" + mat_name, "mat", s) + ".tres"))
 
 		# Duplicate: GLTF sub-resources can't be saved directly
 		var mat_copy: Material = mat.duplicate(true) as Material
@@ -170,12 +172,14 @@ func _save_override(mi: MeshInstance3D, s: int, mat: Material, out_dir: String, 
 		var cached: Material = load(_material_cache[mat_id]) as Material
 		if cached:
 			mi.set_surface_override_material(s, cached)
+		else:
+			_log("  [color=orange]⚠ Cached material could not be loaded: %s[/color]" % _material_cache[mat_id])
 		return
 
 	var mat_name: String = mat.resource_name
 	if mat_name.is_empty():
 		mat_name = "override_%s_s%d" % [mi.name, s]
-	var save_path: String = _unique_path(out_dir.path_join(_sanitize(prefix + "_" + mat_name, s) + ".tres"))
+	var save_path: String = AssetForgeUtils.unique_path(out_dir.path_join(AssetForgeUtils.sanitize(prefix + "_" + mat_name, "mat", s) + ".tres"))
 
 	# Duplicate: GLTF sub-resources can't be saved directly
 	var mat_copy: Material = mat.duplicate(true) as Material
@@ -237,7 +241,7 @@ func _collect_meshes(node: Node, lib: MeshLibrary, next_id: int, prefix: String)
 # ── Save Scene ─────────────────────────────────────────────────
 
 func _save_scene(root: Node, path: String) -> bool:
-	_set_owner_recursive(root, root)
+	AssetForgeUtils.set_owner_recursive(root, root)
 	var packed := PackedScene.new()
 	var pack_err: int = packed.pack(root)
 	if pack_err != OK:
@@ -274,48 +278,10 @@ func _find_gltf_files(folder: String, results: Array[String], recursive: bool) -
 	results.sort()
 
 
-func _set_owner_recursive(node: Node, new_owner: Node) -> void:
-	for child in node.get_children():
-		child.owner = new_owner
-		_set_owner_recursive(child, new_owner)
-
-
 func _ensure_dir(path: String) -> void:
-	if not DirAccess.dir_exists_absolute(path):
-		var err: int = DirAccess.make_dir_recursive_absolute(path)
-		if err == OK:
-			_log("Created: %s" % path)
-		else:
-			_log("[color=red]✗ mkdir failed: %s (error %d)[/color]" % [path, err])
-
-
-func _sanitize(raw: String, fallback: int) -> String:
-	var clean: String = raw.replace("-", "_").replace(" ", "_").replace(".", "_")
-	var result: String = ""
-	for i in clean.length():
-		var c: int = clean.unicode_at(i)
-		if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 95:
-			result += clean[i]
-	if not result.is_empty() and result.unicode_at(0) >= 48 and result.unicode_at(0) <= 57:
-		result = "_" + result
-	if result.is_empty():
-		result = "item_%d" % fallback
-	return result
-
-
-func _unique_path(path: String) -> String:
-	if not FileAccess.file_exists(path):
-		return path
-	var dir: String = path.get_base_dir()
-	var base: String = path.get_file().get_basename()
-	var ext: String = path.get_extension()
-	var n: int = 2
-	while true:
-		var candidate: String = dir.path_join("%s_%d.%s" % [base, n, ext])
-		if not FileAccess.file_exists(candidate):
-			return candidate
-		n += 1
-	return path
+	var msg: String = AssetForgeUtils.ensure_dir(path)
+	if not msg.is_empty():
+		_log(msg)
 
 
 func _log(msg: String) -> void:
