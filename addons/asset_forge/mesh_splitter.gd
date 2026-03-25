@@ -69,17 +69,17 @@ func split(source_path: String, output_dir: String) -> void:
 		# Duplicate the MeshInstance3D so we don't mess with the original tree
 		var mesh_copy: MeshInstance3D = mi.duplicate() as MeshInstance3D
 		mesh_copy.name = mi.name
-		# Reset transform so the part is at origin
+		# Preserve global position when reparenting into the new scene
 		mesh_copy.transform = mi.global_transform
 
 		part_root.add_child(mesh_copy)
 		mesh_copy.owner = part_root
 
 		# If the mesh has children (e.g. collision shapes, skeletons), include them
-		_set_owner_recursive(mesh_copy, part_root)
+		AssetForgeUtils.set_owner_recursive(mesh_copy, part_root)
 
 		# Save
-		var save_path: String = _unique_path(output_dir.path_join(part_name + ".tscn"))
+		var save_path: String = AssetForgeUtils.unique_path(output_dir.path_join(part_name + ".tscn"))
 		var saved: bool = _save_packed_scene(part_root, save_path)
 		part_root.free()
 
@@ -113,7 +113,7 @@ func _build_part_name(mi: MeshInstance3D, source_name: String, index: int) -> St
 	if raw.is_empty() or raw == "MeshInstance3D" or raw.begins_with("@"):
 		raw = "%s_part_%d" % [source_name, index]
 
-	return _sanitize(raw, index)
+	return AssetForgeUtils.sanitize(raw, "part", index)
 
 
 # ── Save ───────────────────────────────────────────────────────
@@ -133,48 +133,10 @@ func _save_packed_scene(root: Node, path: String) -> bool:
 
 # ── Utils ──────────────────────────────────────────────────────
 
-func _set_owner_recursive(node: Node, new_owner: Node) -> void:
-	for child in node.get_children():
-		child.owner = new_owner
-		_set_owner_recursive(child, new_owner)
-
-
 func _ensure_dir(path: String) -> void:
-	if not DirAccess.dir_exists_absolute(path):
-		var err: int = DirAccess.make_dir_recursive_absolute(path)
-		if err == OK:
-			_log("Created: %s" % path)
-		else:
-			_log("[color=red]✗ mkdir failed: %s (error %d)[/color]" % [path, err])
-
-
-func _sanitize(raw: String, fallback: int) -> String:
-	var clean: String = raw.replace("-", "_").replace(" ", "_").replace(".", "_")
-	var result: String = ""
-	for i in clean.length():
-		var c: int = clean.unicode_at(i)
-		if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 95:
-			result += clean[i]
-	if not result.is_empty() and result.unicode_at(0) >= 48 and result.unicode_at(0) <= 57:
-		result = "_" + result
-	if result.is_empty():
-		result = "part_%d" % fallback
-	return result
-
-
-func _unique_path(path: String) -> String:
-	if not FileAccess.file_exists(path):
-		return path
-	var dir: String = path.get_base_dir()
-	var base: String = path.get_file().get_basename()
-	var ext_str: String = path.get_extension()
-	var n: int = 2
-	while true:
-		var candidate: String = dir.path_join("%s_%d.%s" % [base, n, ext_str])
-		if not FileAccess.file_exists(candidate):
-			return candidate
-		n += 1
-	return path
+	var msg: String = AssetForgeUtils.ensure_dir(path)
+	if not msg.is_empty():
+		_log(msg)
 
 
 func _log(msg: String) -> void:
