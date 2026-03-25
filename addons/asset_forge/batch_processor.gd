@@ -148,7 +148,12 @@ func _process_mesh_mats(mi: MeshInstance3D, out_dir: String, prefix: String) -> 
 			mat_name = "mat_%s_s%d" % [mi.name, s]
 		var save_path: String = _unique_path(out_dir.path_join(_sanitize(prefix + "_" + mat_name, s) + ".tres"))
 
-		var save_err: int = ResourceSaver.save(mat, save_path)
+		# Duplicate: GLTF sub-resources can't be saved directly
+		var mat_copy: Material = mat.duplicate(true) as Material
+		mat_copy.resource_path = ""
+		mat_copy.resource_name = mat_name
+
+		var save_err: int = ResourceSaver.save(mat_copy, save_path)
 		if save_err == OK:
 			_material_cache[mat_id] = save_path
 			var saved: Material = load(save_path) as Material
@@ -156,7 +161,7 @@ func _process_mesh_mats(mi: MeshInstance3D, out_dir: String, prefix: String) -> 
 				mesh.surface_set_material(s, saved)
 			_log("  Material: %s" % save_path.get_file())
 		else:
-			_log("  [color=red]✗ Material save failed: %s[/color]" % save_path.get_file())
+			_log("  [color=red]✗ Material save failed: %s (error %d)[/color]" % [save_path.get_file(), save_err])
 
 
 func _save_override(mi: MeshInstance3D, s: int, mat: Material, out_dir: String, prefix: String) -> void:
@@ -172,7 +177,12 @@ func _save_override(mi: MeshInstance3D, s: int, mat: Material, out_dir: String, 
 		mat_name = "override_%s_s%d" % [mi.name, s]
 	var save_path: String = _unique_path(out_dir.path_join(_sanitize(prefix + "_" + mat_name, s) + ".tres"))
 
-	var save_err: int = ResourceSaver.save(mat, save_path)
+	# Duplicate: GLTF sub-resources can't be saved directly
+	var mat_copy: Material = mat.duplicate(true) as Material
+	mat_copy.resource_path = ""
+	mat_copy.resource_name = mat_name
+
+	var save_err: int = ResourceSaver.save(mat_copy, save_path)
 	if save_err == OK:
 		_material_cache[mat_id] = save_path
 		var saved: Material = load(save_path) as Material
@@ -197,8 +207,11 @@ func _collect_meshes(node: Node, lib: MeshLibrary, next_id: int, prefix: String)
 		if mi.mesh != null:
 			var iid: int = mi.mesh.get_instance_id()
 			if not _mesh_cache.has(iid):
+				# Duplicate mesh so it survives root.free()
+				var mesh_copy: Mesh = mi.mesh.duplicate(true) as Mesh
+
 				lib.create_item(next_id)
-				lib.set_item_mesh(next_id, mi.mesh)
+				lib.set_item_mesh(next_id, mesh_copy)
 
 				var item_name: String = mi.name
 				if item_name.is_empty() or item_name == "MeshInstance3D":
@@ -206,7 +219,7 @@ func _collect_meshes(node: Node, lib: MeshLibrary, next_id: int, prefix: String)
 				lib.set_item_name(next_id, item_name)
 
 				var shapes: Array = []
-				var shape: ConvexPolygonShape3D = mi.mesh.create_convex_shape()
+				var shape: ConvexPolygonShape3D = mesh_copy.create_convex_shape()
 				if shape:
 					shapes.append(Transform3D.IDENTITY)
 					shapes.append(shape)
